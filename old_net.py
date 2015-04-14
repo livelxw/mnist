@@ -27,7 +27,6 @@ def model(X, w_h, w_o):
 
 
 trX, teX, trY, teY = load_data.get_raw_split_data()
-# trX, teX, trY, teY = load_data.get_split_data(test_size=0.1, threshold=0)
 
 X = T.fmatrix()
 Y = T.fmatrix()
