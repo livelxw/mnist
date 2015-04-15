@@ -2,9 +2,17 @@ import numpy as np
 from theano import tensor as T
 import theano
 import load_data
-from theano.tensor.shared_randomstreams import RandomStreams
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 srng = RandomStreams()
+
+
+def floatX(X):
+    return np.asarray(X, dtype=theano.config.floatX)
+
+
+def init_weights(shape):
+    return theano.shared(floatX(np.random.randn(*shape)*0.01))
 
 
 def rectify(X):
@@ -44,7 +52,33 @@ def model(X, w_h, w_h2, w_o, p_drop_input, p_drop_hidden):
     h = dropout(h, p_drop_hidden)
     h2 = rectify(T.dot(h, w_h2))
 
-    h2 = rectify(h2, p_drop_hidden)
+    h2 = dropout(h2, p_drop_hidden)
     py_x = softmax(T.dot(h2, w_o))
     return h, h2, py_x
 
+
+trX, teX, trY, teY = load_data.get_raw_split_data()
+
+X = T.fmatrix()
+Y = T.fmatrix()
+
+w_h = init_weights((784, 625))
+w_h2 = init_weights((625, 625))
+w_o = init_weights((625, 10))
+
+noise_h, noise_h2, noise_py_x = model(X, w_h, w_h2, w_o, 0.2, 0.5)
+h, h2, py_x = model(X, w_h, w_h2, w_o, 0., 0.)
+
+y_x = T.argmax(py_x, axis=1)
+
+cost = T.mean(T.nnet.categorical_crossentropy(noise_py_x, Y))
+params = [w_h, w_h2, w_o]
+updates = RMSprop(cost, params, lr=0.001)
+
+train = theano.function(inputs=[X, Y], outputs=cost, updates=updates, allow_input_downcast=True)
+predict = theano.function(inputs=[X], outputs=y_x, allow_input_downcast=True)
+
+for i in range(100):
+    for start, end in zip(range(0, len(trX), 128), range(128, len(trX), 128)):
+        cost = train(trX[start:end], trY[start:end])
+    print np.mean(np.argmax(teY, axis=1) == predict(teX))
