@@ -4,6 +4,8 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import numpy as np
 from theano.tensor.nnet.conv import conv2d
 from theano.tensor.signal.downsample import max_pool_2d
+import load_data
+from datetime import datetime
 
 srng = RandomStreams()
 
@@ -13,7 +15,7 @@ def floatX(X):
 
 
 def init_weights(shape):
-    return theano.shared(floatX(np.random.randn(*shape)*0.01))
+    return theano.shared(floatX(np.random.randn(*shape) * 0.01))
 
 
 def rectify(X):
@@ -23,6 +25,14 @@ def rectify(X):
 def softmax(X):
     e_x = T.exp(X - X.max(axis=1).dimshuffle(0, 'x'))
     return e_x / e_x.sum(axis=1).dimshuffle(0, 'x')
+
+
+def dropout(X, p=0.):
+    if p > 0:
+        retain_prob = 1 - p
+        X *= srng.binomial(X.shape, p=retain_prob, dtype=theano.config.floatX)
+        X /= retain_prob
+    return X
 
 
 def RMSprop(cost, params, lr=0.001, rho=0.9, epsilon=1e-6):
@@ -46,7 +56,7 @@ def dropout(X, p=0.):
     return X
 
 
-def model(X, w, w2, w3, w4, w_o, p_drop_conv, p_drop_hidden):
+def model(X, w, w2, w3, w4, p_drop_conv, p_drop_hidden):
     l1a = rectify(conv2d(X, w, border_mode='full'))
     l1 = max_pool_2d(l1a, (2, 2))
     l1 = dropout(l1, p_drop_conv)
@@ -67,3 +77,35 @@ def model(X, w, w2, w3, w4, w_o, p_drop_conv, p_drop_hidden):
     return l1, l2, l3, l4, pyx
 
 
+trX, teX, trY, teY = load_data.get_raw_split_data(test_size=0.15)
+
+trX = trX.reshape(-1, 1, 28, 28)
+teX = trX.reshape(-1, 1, 28, 28)
+
+X = T.ftensor4()
+Y = T.fmatrix()
+
+w = init_weights((32, 1, 3, 3))
+w2 = init_weights((64, 32, 3, 3))
+w3 = init_weights((128, 64, 3, 3))
+w4 = init_weights((128 * 3 * 3, 625))
+w_o = init_weights((625, 10))
+
+noise_l1, noise_l2, noise_l3, noise_l4, noise_py_x = model(X, w, w2, w3, w4, 0.2, 0.5)
+l1, l2, l3, l4, py_x = model(X, w, w2, w3, w4, 0., 0.)
+y_x = T.argmax(py_x, axis=1)
+
+cost = T.mean(T.nnet.categorical_crossentropy(noise_py_x, Y))
+params = [w, w2, w3, w4, w_o]
+updates = RMSprop(cost, params, lr=0.001)
+
+train = theano.function(inputs=[X, Y], outputs=cost, updates=updates, allow_input_downcast=True)
+predict = theano.function(inputs=[X], outputs=y_x, allow_input_downcast=True)
+
+print "start..."
+for i in range(100):
+    print "training..."
+    start_time = datetime.now()
+    for start, end in zip(range(0, len(trX), 128), range(128, len(trX), 128)):
+        cost = train(trX[start:end], trY[start:end])
+    print np.mean(np.argmax(teY, axis=1) == predict(teX)), "time: " + str((datetime.now() - start_time).seconds) + "s"

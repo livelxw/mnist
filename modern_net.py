@@ -3,6 +3,7 @@ from theano import tensor as T
 import theano
 import load_data
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
+from datetime import datetime
 
 srng = RandomStreams()
 
@@ -12,7 +13,7 @@ def floatX(X):
 
 
 def init_weights(shape):
-    return theano.shared(floatX(np.random.randn(*shape)*0.01))
+    return theano.shared(floatX(np.random.randn(*shape) * 0.01))
 
 
 def rectify(X):
@@ -57,7 +58,7 @@ def model(X, w_h, w_h2, w_o, p_drop_input, p_drop_hidden):
     return h, h2, py_x
 
 
-trX, teX, trY, teY = load_data.get_raw_split_data()
+trX, teX, trY, teY = load_data.get_raw_split_data(test_size=0.15)
 
 X = T.fmatrix()
 Y = T.fmatrix()
@@ -79,6 +80,7 @@ train = theano.function(inputs=[X, Y], outputs=cost, updates=updates, allow_inpu
 predict = theano.function(inputs=[X], outputs=y_x, allow_input_downcast=True)
 
 for i in range(100):
+    start_time = datetime.now()
     for start, end in zip(range(0, len(trX), 128), range(128, len(trX), 128)):
         cost = train(trX[start:end], trY[start:end])
-    print np.mean(np.argmax(teY, axis=1) == predict(teX))
+    print np.mean(np.argmax(teY, axis=1) == predict(teX)), "time: " + str((datetime.now() - start_time).seconds) + "s"
